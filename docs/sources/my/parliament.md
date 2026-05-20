@@ -20,9 +20,30 @@ Bills tabled in the Dewan Rakyat (lower house of Parliament) from 1990 to presen
 | `presented_by` | Minister who tabled the bill |
 | `pdf_url` | Direct link to the bill PDF on parlimen.gov.my |
 
+## Crawl strategy
+
+```mermaid
+graph TD
+  A[seed_urls.txt<br/>live index + archive URL] --> B[fetch.py<br/>GET with session cookie]
+  B --> C{Page type?}
+  C -->|live index<br/>?uweb=dr| D[parse.py<br/>HTML table parser]
+  C -->|archive<br/>?uweb=dr&arkib=yes| E[dhtmlx_arkib.py<br/>AJAX XML tree]
+  D --> F[bill rows<br/>dr_label · title · status · dates]
+  E --> G[dhtmlx XML<br/>ajx=1 per node]
+  G --> H[pdf_discovery.py<br/>resolve PDF URLs]
+  F --> I[bills_<year>.csv]
+  H --> I
+  I --> J[pipeline: download → extract]
+```
+
 ## Index format
 
-The site uses a **dhtmlx tree** served over AJAX (`ajx=1` query param). The adapter (`dhtmlx_arkib.py`) fetches and parses this XML tree to extract bill rows, then resolves PDF URLs.
+The site uses two different formats depending on which index is being crawled:
+
+**Live index** (`?uweb=dr`) — standard HTML table, parsed by `parse.py`.
+
+**Archive** (`?uweb=dr&arkib=yes`) — uses a **dhtmlx tree** served over AJAX (`ajx=1` query param).
+`dhtmlx_arkib.py` fetches the XML tree node-by-node and extracts bill rows, then resolves PDF URLs via `pdf_discovery.py`.
 
 Historical bills (pre-~2010) may have missing or broken PDF URLs; `pdf_resolve_status` records whether the PDF link was confirmed reachable.
 

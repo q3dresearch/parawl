@@ -39,15 +39,42 @@ python -m lib.pipeline.extract --adapter my.parliament_my --year 2024
 ```bash
 git clone https://github.com/q3dresearch/parawl
 cd parawl
-python -m venv .venv && .venv/Scripts/activate  # Windows
-pip install -r requirements.txt
+```
 
+**Windows**
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+**macOS / Linux**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Then crawl and extract:
+
+```bash
 # crawl bill index for Malaysia
 python -m lib.sources.my.parliament_my.crawl
 
 # extract text from downloaded PDFs
 python -m lib.pipeline.extract
 ```
+
+## Browse the docs locally
+
+```bash
+pip install mkdocs-material
+mkdocs serve
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
+
+The hosted docs are at **https://q3dresearch.github.io/parawl/**
 
 ## Output format
 

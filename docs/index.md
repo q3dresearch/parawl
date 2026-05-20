@@ -1,43 +1,133 @@
-# StateConscious
+# parawl
 
-**A diff engine for public policy.**
+**Southeast Asia parliamentary document crawler and parser library.**
 
-StateConscious tracks how laws change over time, extracts structured meaning from bill text, and maintains a queryable record of who is affected and how.
+Crawl, download, and extract bill and Hansard text from public government sources.
+No hosted service required — run it locally, own your corpus.
 
-## The problem
+---
 
-Laws change quietly. PDFs are silently updated. Gazette notices are published without fanfare. The people most affected — employees, SME owners, property buyers — find out months or years later, usually through a penalty or a lawyer's letter.
+## What it does
 
-The elite class has in-house counsel and retainers who monitor this. Everyone else doesn't.
+```mermaid
+graph LR
+  A[seed_urls.txt] --> B[crawl<br/>discover URLs]
+  B --> C[download<br/>fetch PDFs]
+  C --> D[extract<br/>PDF → Markdown]
+  D --> E[chunk<br/>LLM-ready JSONL]
+  E --> F[your app<br/>search · RAG · analytics]
 
-## What StateConscious does
+  style F fill:#6200ea,color:#fff
+```
 
-1. **Ingests** public legal sources on a schedule (parliament bills, gazette, subsidiary legislation)
-2. **Detects changes** — new content, revised PDFs, new readings — using content-addressed snapshots
-3. **Extracts meaning** — purpose, key clauses, affected parties, industry tags — via LLM analysis
-4. **Stores durably** — structured metadata in SQLite, full text in a vector store for semantic queries
-5. **Exposes** — a queryable record: "what changed in employment law in 2024?" or "which bills affect data processors?"
+Each stage is a standalone Python module. You can run one stage, all stages, or wire them into your own pipeline.
+parawl has no opinion on where data goes after extraction.
 
-## What it is not
+---
 
-- Not a legal advice service
-- Not a full legislative database (no court rulings, no full consolidated Acts in scope for MVP)
-- Not a real-time alerting system
+## Directory structure
 
-## Design principles
+```
+parawl/
+│
+├── src/lib/
+│   ├── paths.py            repo_root() — single source of truth for all paths
+│   ├── artifacts.py        content-addressed path helpers (data/raw, data/derived)
+│   │
+│   ├── sources/            one adapter per legal source
+│   │   ├── discovery.py    seed_urls.txt → source list
+│   │   └── my/
+│   │       └── parliament_my/   parlimen.gov.my bills (1990–present)
+│   │           ├── crawl.py
+│   │           ├── fetch.py
+│   │           ├── parse.py
+│   │           ├── dhtmlx_arkib.py
+│   │           ├── pdf_discovery.py
+│   │           ├── config.py
+│   │           └── seed_urls.txt
+│   │
+│   ├── parser/             shared parsers used across adapters
+│   │   └── seed_txt.py
+│   │
+│   └── pipeline/           processing stages
+│       ├── extract.py      ✅ PDF → Markdown
+│       ├── download.py     🔧 planned
+│       └── chunk.py        🔧 planned
+│
+├── data/                   gitignored — produced at runtime
+│   ├── raw/                PDFs + .meta.json sidecar
+│   └── derived/            extracted Markdown, chunks, analysis
+│
+├── tests/
+├── docs/                   this site
+└── mkdocs.yml
+```
 
-- **Snapshot, don't overwrite.** Every ingestion is immutable; hash-addressed storage means you can always replay history.
-- **Extraction is a pipeline, not a chat.** LLM calls produce structured artifacts on disk; not ephemeral context.
-- **One source first.** MVP proves the pipeline on Malaysian Parliament bills (Dewan Rakyat) before expanding.
-- **Separation of concerns.** Crawling, extraction, and querying are distinct stages with their own modules.
+---
 
-## Current status
+## Output artifacts
 
-| Component | Status |
-|-----------|--------|
-| Bill index crawler (MY Parliament) | ✅ working — 1,000+ bills, 1990–present |
-| PDF download | 🔧 in design |
-| Text extraction | 🔧 in design |
-| LLM analysis | 🔧 in design |
-| SQLite metadata store | ✅ schema exists |
-| Vector store | 📋 planned |
+A run produces content-addressed artifacts under `data/`:
+
+```
+data/raw/my/parliament_my/pdf/2024/
+  DR-6-2024.pdf
+  DR-6-2024.meta.json      # sha256, url, outcome, downloaded_at
+
+data/derived/my/parliament_my/extracted/2024/
+  DR-6-2024.md             # full bill text in Markdown
+```
+
+---
+
+## Quickstart
+
+=== "Windows"
+
+    ```powershell
+    git clone https://github.com/q3dresearch/parawl
+    cd parawl
+    python -m venv .venv
+    .venv\Scripts\Activate.ps1
+    pip install -r requirements.txt
+    ```
+
+=== "macOS / Linux"
+
+    ```bash
+    git clone https://github.com/q3dresearch/parawl
+    cd parawl
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    ```
+
+Then run a crawl:
+
+```bash
+# Crawl bill index — produces src/out/bills_csv/bills_<year>.csv
+PYTHONPATH=src python -m lib.sources.my.parliament_my.crawl --list-arkib-bills --arkib-csv-dir src/out/bills_csv
+
+# Extract text from downloaded PDFs
+PYTHONPATH=src python -m lib.pipeline.extract
+```
+
+---
+
+## Browse these docs locally
+
+```bash
+pip install mkdocs-material
+mkdocs serve
+# open http://127.0.0.1:8000
+```
+
+---
+
+## Part of the StateConscious project
+
+`parawl` is the open data layer of [StateConscious](https://github.com/q3dresearch/stateconscious) —
+a longitudinal study on Southeast Asian law and legislative transparency.
+
+The application layer (search, RAG indexing, analytics, frontend) lives in stateconscious and consumes parawl's artifacts.
+parawl is the part anyone can run independently.

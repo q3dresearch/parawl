@@ -1,86 +1,107 @@
-# StateConscious — repository layout
+# Architecture
 
-This doc is the **system map** (how code and data relate). Product intent and gates live under `blueprint/`. **Human vs agent roles:** [`PROJECT_USE.md`](PROJECT_USE.md).
+## Design decisions
 
-**Naming:** The **git repo folder** (`stateconscious/`) is the product name. The **Python package** under `src/` is `lib` (import `lib.*`) so we do not repeat `stateconscious/stateconscious/...` in paths.
+### 1. Source plugin pattern
 
-## Top-level
+Each country/chamber is a self-contained adapter under `src/lib/sources/<region>/<adapter>/`.
+The adapter owns everything about that source: how to discover URLs, how to fetch pages,
+how to parse the HTML or XML, and what the output schema looks like.
+
+No shared crawl logic bleeds across adapters. If parlimen.gov.my changes its format,
+only `parliament_my/` changes.
+
+```mermaid
+graph TD
+  subgraph sources
+    A[my/parliament_my]
+    B[sg/parliament_sg — future]
+    C[id/dpr_id — future]
+  end
+
+  subgraph pipeline
+    D[download.py]
+    E[extract.py]
+    F[chunk.py]
+  end
+
+  A --> D
+  B --> D
+  C --> D
+  D --> E --> F
+```
+
+### 2. Artifact-first, no DB in the library
+
+parawl writes files, not database rows. Every output is a file on disk with a deterministic path:
+
+```
+data/raw/<adapter>/pdf/<year>/<bill_id>.pdf
+data/derived/<adapter>/extracted/<year>/<bill_id>.md
+```
+
+**Why:** any downstream app (SQLite, Postgres, vector store, S3) can consume files.
+A DB dependency would couple parawl to one storage choice and make local runs harder.
+The application layer (stateconscious) owns the DB.
+
+### 3. Content-addressed storage
+
+`artifacts.py` computes SHA-256 of each downloaded file and stores it in a `.meta.json` sidecar.
+The path itself uses the bill's natural key (`year/bill_id`), not the hash.
+
+**Why:** the natural key makes paths human-readable and debuggable.
+The hash in `.meta.json` enables change detection — if a PDF is silently re-published,
+the SHA-256 changes and downstream stages can detect it.
+
+### 4. Idempotent stages
+
+Each pipeline stage checks whether its output artifact exists before running.
+Re-running the pipeline on a machine that already has most bills does not re-download or re-extract them.
+
+Pass `--force` to any stage to overwrite existing artifacts.
+
+### 5. Import direction
+
+Cross-module imports flow in one direction only:
+
+```mermaid
+graph LR
+  pipeline --> parser
+  pipeline --> paths
+  pipeline --> artifacts
+  sources --> parser
+  sources --> paths
+  sources --> artifacts
+  parser --> paths
+```
+
+`pipeline` never imports from `sources`. `sources` never imports from `pipeline`.
+This keeps stages independently testable.
+
+---
+
+## Repository layout
 
 | Path | Role |
 |------|------|
-| `src/lib/` | **Library** — DB, **`parser/`** (shared e.g. `seed_txt`), **`sources/`** (per-site adapters + **`discovery.py`**). |
-| `src/lib/sources/<region>/<adapter>/` | **Adapter** — `fetch`/`parse`/`crawl`, **`seed_urls.txt`**, **`config.py`**, optional **`README.md`**. |
-| `src/config/` | **Optional** — secrets / env templates (not required for URL lists). |
-| `mds/agents/` | Agent briefs: **`crawlerAgent.md`**, **`sitesCrawl.md`**, … |
-| `mds/skills/` | Reserved for **npx / packaged skills**. |
-| `mds/human/` | **Human-only** — diary; agents do not author here. |
-| `adhoc/todo/` | Human-only **async prompts**. **`adhoc/done/`** — archive. **`adhoc/agentHumanChat/`** — agent questions to human; **`resolved/`** for closed lessons. |
-| `cron/lib/` | Small helpers (e.g. adhoc archive); see **`mds/agents/cronAgent.md`**. |
-| `scripts/` | **General** human tools: **`init_db.py`**, **`inspect_crawl.py`**, **`view_parsed.py`**. Site crawls: **`python -m lib.sources…`**. |
-| `sql/migrations/` | Versioned SQLite DDL (`001_init.sql`, …). |
-| `tests/` | Pytest + fixtures. |
-| `data/raw/` | `runs.jsonl` + `html/<sha256>/…` + `pdf/<sha256>/…`. |
-| `data/derived/` | `parsed/<sha256>/…`. |
-| `stateconscious.db` | SQLite (gitignored) — `source_library`, `crawl_history`. |
+| `src/lib/paths.py` | `repo_root()` — single source of truth for all path math |
+| `src/lib/artifacts.py` | Content-addressed paths under `data/raw` and `data/derived` |
+| `src/lib/sources/` | One adapter per legal source, one folder per region |
+| `src/lib/parser/` | Shared parsers used by multiple adapters |
+| `src/lib/pipeline/` | Processing stages: download → extract → chunk → analyze |
+| `data/raw/` | Downloaded PDFs + `.meta.json` sidecars (gitignored) |
+| `data/derived/` | Extracted Markdown, chunks, analysis JSON (gitignored) |
+| `tests/` | Pytest — unit tests for parsers, adapters, pipeline stages |
+| `docs/` | This MkDocs site |
 
-**Legacy:** `data/snapshots/<adapter>/` may still exist locally.
+---
 
-## `paths.py` and `artifacts.py`
+## Adding a new source
 
-- **`lib/paths.py`** — **`repo_root()`** so `data/` and the DB path resolve consistently from any module.
-- **`lib/artifacts.py`** — **Content-addressed** paths under `data/raw` / `data/derived` (shared by all adapters).
+1. Create `src/lib/sources/<region>/<adapter>/`
+2. Add `seed_urls.txt` — one URL per line, the entry points for the crawl
+3. Implement `fetch.py`, `parse.py`, `crawl.py`, `config.py`
+4. Add tests under `tests/`
+5. Document under `docs/sources/<region>/<adapter>.md`
 
-## Import convention
-
-With `PYTHONPATH=src` (or `pytest.ini` `pythonpath = . src` for `cron.*` tests):
-
-```text
-import lib
-from lib.sources.my.parliament_my import fetch
-from lib.sources.my.parliament_my import parse  # HTML + billindex / dhtmlx PDF helpers
-```
-
-## Pipeline
-
-After bill discovery (`src/lib/sources/…`), documents flow through four sequential stages under **`src/lib/pipeline/`**.
-
-| Module | Input | Output | Artifact path |
-|--------|-------|--------|---------------|
-| `download.py` | Bill row with `pdf_url` (from CSV or DB) | Raw PDF + metadata | `data/raw/<adapter>/pdf/<year>/<bill_id>.pdf` + `.meta.json` |
-| `extract.py` | Raw PDF path | Structured Markdown | `data/derived/<adapter>/extracted/<year>/<bill_id>/text.md` |
-| `segment.py` | Extracted text | Clauses / section list | `data/derived/<adapter>/segments/<year>/<bill_id>/segments.json` |
-| `analyze.py` | Segments + bill metadata | Semantic units + impact narrative | `data/derived/<adapter>/analyzed/<year>/<bill_id>/analysis.json` |
-
-**Idempotency:** each stage checks whether its artifact already exists before running; `--force` overwrites.
-
-**LLM:** configured via `.env` (see `.env.example`); client lives at `src/lib/llm/client.py`.
-
-### analysis.json schema (target)
-
-```json
-{
-  "bill_id": "D.R.21/2024",
-  "title": "Personal Data Protection (Amendment) Bill 2024",
-  "purpose": "one-sentence intent",
-  "summary": "2–3 sentence plain-English summary",
-  "key_clauses": [{"section": "4", "change": "…", "impact": "…"}],
-  "affected_parties": ["individuals", "data processors", "SMEs"],
-  "industries": ["tech", "finance", "healthcare"],
-  "tags": ["data-privacy", "compliance", "amendment"],
-  "confidence": 0.9,
-  "sha256": "<sha256 stored in .meta.json, not in path>",
-  "analyzed_at": "ISO-8601"
-}
-```
-
-## Patterns
-
-- **Site crawl logic** lives under **`lib/sources/…`**, not **`lib/pipeline/`**.
-- **Pipeline logic** lives under **`lib/pipeline/`**; one module per stage.
-- **Thin scripts / fat library** — `scripts/*.py` stay small; logic lives under `lib/`.
-- **SQL migrations** — schema in `sql/migrations/`; `init_schema()` applies a file.
-- **Docs vs blueprint** — `docs/` = how the system runs; `blueprint/` = what we agreed to build.
-
-## Operator playbook
-
-See **`OPERATIONS.md`**.
+See `src/lib/sources/my/parliament_my/` as the reference implementation.

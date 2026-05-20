@@ -1,34 +1,23 @@
-site_name: StateConscious
-site_description: A diff engine for public policy — tracking how laws change and who they affect.
+site_name: parawl
+site_description: Southeast Asia parliamentary document crawler and parser library.
+site_url: https://q3dresearch.github.io/parawl/
+repo_url: https://github.com/q3dresearch/parawl
 docs_dir: docs
 
 nav:
   - Introduction: index.md
+  - Architecture: ARCHITECTURE.md
   - Sources:
     - Overview: sources/index.md
-    - Country / State / Category: sources/taxonomy.md
+    - Crawl Strategy: sources/taxonomy.md
     - Malaysia — Parliament: sources/my/parliament.md
   - Pipeline:
     - Overview: pipeline/index.md
     - Download: pipeline/download.md
     - Extract: pipeline/extract.md
     - Analyze: pipeline/analyze.md
-  - Storage:
-    - Overview: storage/index.md
-    - Schema: storage/schema.md
-    - Vector Store: storage/vector.md
-  - Who uses it:
-    - Overview: usage/index.md
-    - Litigator: usage/litigator.md
-    - Consumer: usage/consumer.md
-    - Business owner: usage/business.md
-    - Judge: usage/judge.md
-    - Politician: usage/politician.md
-    - Journalist: usage/journalist.md
   - Reference:
-    - Architecture: ARCHITECTURE.md
     - Operations: OPERATIONS.md
-    - Project Use: PROJECT_USE.md
 
 theme:
   name: material
@@ -39,6 +28,7 @@ theme:
     - navigation.sections
     - navigation.top
     - toc.integrate
+    - content.code.copy
   font:
     text: Inter
 
@@ -52,3 +42,5 @@ markdown_extensions:
       alternate_style: true
   - admonition
   - tables
+  - pymdownx.highlight:
+      anchor_linenums: true
