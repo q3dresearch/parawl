@@ -5,19 +5,24 @@ repo_url: https://github.com/q3dresearch/parawl
 docs_dir: docs
 
 nav:
-  - Introduction: index.md
-  - Architecture: ARCHITECTURE.md
+  - Home: index.md
+  - Architecture: architecture/index.md
   - Sources:
-    - Overview: sources/index.md
+    - sources/index.md
     - Crawl Strategy: sources/taxonomy.md
-    - Malaysia — Parliament: sources/my/parliament.md
+    - Malaysia:
+      - Parliament (Dewan Rakyat): sources/my/parliament.md
   - Pipeline:
-    - Overview: pipeline/index.md
+    - pipeline/index.md
     - Download: pipeline/download.md
     - Extract: pipeline/extract.md
     - Analyze: pipeline/analyze.md
+  - Tests: tests/index.md
+  - Changelog: changelog/index.md
   - Reference:
-    - Operations: OPERATIONS.md
+    - Operations: reference/operations.md
+    - Configuration: reference/config.md
+    - Contributing: reference/project-use.md
 
 theme:
   name: material
@@ -25,7 +30,7 @@ theme:
     primary: deep purple
     accent: purple
   features:
-    - navigation.sections
+    - navigation.indexes
     - navigation.top
     - toc.integrate
     - content.code.copy
@@ -44,3 +49,4 @@ markdown_extensions:
   - tables
   - pymdownx.highlight:
       anchor_linenums: true
+  - meta

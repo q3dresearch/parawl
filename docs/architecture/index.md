@@ -1,3 +1,9 @@
+---
+title: Architecture
+description: Design decisions, module structure, and import rules for parawl.
+tags: [architecture, design]
+---
+
 # Architecture
 
 ## Design decisions

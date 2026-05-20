@@ -1,6 +1,12 @@
-# Source Taxonomy — Country / State / Category
+---
+title: Crawl Strategy
+description: How parawl classifies sources by country, state, and document category.
+tags: [sources, taxonomy, adapters]
+---
 
-StateConscious organises all legal sources using a three-level hierarchy. This taxonomy determines how adapters are named, where artifacts are stored, and how query results are scoped.
+# Source Taxonomy
+
+parawl organises all legal sources using a three-level hierarchy. This taxonomy determines how adapters are named and where artifacts are stored on disk.
 
 ## Hierarchy
 
@@ -18,12 +24,12 @@ ISO 3166-1 alpha-2 code, lower-cased.
 |------|---------|
 | `my` | Malaysia |
 | `sg` | Singapore |
-| `gb` | United Kingdom |
-| `us` | United States |
+| `th` | Thailand |
+| `id` | Indonesia |
 
 ### State / territory / level
 
-For federal systems like Malaysia, this distinguishes between national legislation and state enactments.
+For federal systems like Malaysia, this distinguishes national legislation from state enactments.
 
 | Value | Meaning |
 |-------|---------|
@@ -31,9 +37,8 @@ For federal systems like Malaysia, this distinguishes between national legislati
 | `selangor` | Selangor state |
 | `sabah` | Sabah state |
 | `sarawak` | Sarawak state |
-| *(state name)* | Any other state or territory |
 
-For centralised systems (Singapore, UK), this is typically `national`.
+For centralised systems (Singapore), this is typically `national`.
 
 ### Category
 
@@ -43,34 +48,26 @@ The type of legal document.
 |----------|-------------|
 | `bills` | Proposed legislation before Parliament |
 | `acts` | Passed and gazetted primary legislation |
-| `gazette` | Official Gazette (proclamations, subsidiary legislation notices) |
+| `gazette` | Official Gazette notices |
 | `subsidiary_legislation` | Regulations, rules, orders made under an Act |
-| `hansard` | Parliamentary debates / Hansard records |
-| `judgments` | Court judgments (future scope) |
+| `hansard` | Parliamentary debates and Hansard records |
 
-## How this maps to adapters
+## How this maps to adapters and artifact paths
 
-An adapter ID is typically `<category>_<country>` or a descriptive slug:
+An adapter ID is a descriptive slug, typically `<category>_<country>`:
 
 ```
-parliament_my           →  country=my, state=federal, category=bills
-gazette_my_federal      →  country=my, state=federal, category=gazette
+parliament_my      →  country=my, state=federal, category=bills+hansard
 ```
 
 Artifact paths follow the same structure:
 
 ```
-data/raw/<adapter_id>/pdf/<sha256>/
-data/derived/<adapter_id>/extracted/<sha256>/
-data/derived/<adapter_id>/analyzed/<sha256>/
+data/raw/my/parliament_my/pdf/<year>/<bill_id>.pdf
+data/derived/my/parliament_my/extracted/<year>/<bill_id>.md
 ```
 
-## Query scope
+## Adding a country
 
-The taxonomy enables scoped queries:
-
-- All bills affecting `my/federal` in 2024
-- All gazette notices under `my/selangor` in the last 90 days
-- All employment-related `acts` across `my/federal` and `my/sabah`
-
-These queries work against the `analyzed` artifacts and the SQLite metadata store.
+Create a folder under `src/lib/sources/<country>/` and add your first adapter inside it.
+The `<country>` code must match an ISO 3166-1 alpha-2 code. See [Architecture](../architecture/index.md) for the full adapter structure.

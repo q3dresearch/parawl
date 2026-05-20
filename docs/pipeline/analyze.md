@@ -1,12 +1,28 @@
+---
+title: Analyze
+description: Pipeline stage — LLM impact analysis of extracted bill text.
+tags: [pipeline, analyze, llm]
+status: planned
+---
+
 # Pipeline — Analyze
 
-**Module:** `src/lib/pipeline/analyze.py`  
-**Input:** `data/derived/<adapter>/extracted/<year>/<bill_id>/text.txt` + bill metadata row  
+!!! warning "Planned"
+    `lib.pipeline.analyze` is not yet implemented. This page documents the intended design.
+
+**Module:** `src/lib/pipeline/analyze.py`
+**Input:** `data/derived/<adapter>/extracted/<year>/<bill_id>.md`
 **Output:** `data/derived/<adapter>/analyzed/<year>/<bill_id>/analysis.json`
 
-## What it does
+## Requirements
 
-Calls an LLM once per bill to produce a structured impact analysis grounded in the extracted text. The output is the primary human-readable artifact — it's what gets indexed in the vector store and surfaced to end users.
+An LLM API key is needed for this stage. See [Configuration](../reference/config.md#analyze-stage-planned) for setup.
+The crawl, download, and extract stages do not require this.
+
+## What it will do
+
+Call an LLM once per bill to produce a structured impact analysis grounded in the extracted Markdown.
+This turns raw legal text into something a non-lawyer can use.
 
 ## Output schema
 
@@ -14,8 +30,8 @@ Calls an LLM once per bill to produce a structured impact analysis grounded in t
 {
   "bill_id": "D.R.21/2024",
   "title": "Personal Data Protection (Amendment) Bill 2024",
-  "purpose": "Strengthens obligations for data processors and introduces data breach notification requirements.",
-  "summary": "2–3 sentence plain-English summary of what changed and why it matters.",
+  "purpose": "Strengthens obligations for data processors and introduces breach notification requirements.",
+  "summary": "2-3 sentence plain-English summary of what changed and why it matters.",
   "key_clauses": [
     {"section": "4", "change": "...", "impact": "..."}
   ],
@@ -23,32 +39,20 @@ Calls an LLM once per bill to produce a structured impact analysis grounded in t
   "industries": ["tech", "finance", "healthcare"],
   "tags": ["data-privacy", "compliance", "amendment"],
   "confidence": 0.9,
-  "source_sha256": "<sha256>",
-  "analyzed_at": "2024-07-16T10:00:00Z"
+  "analyzed_at": "2026-05-20T00:00:00Z"
 }
 ```
 
-## Prompt discipline
+## Design principles
 
-- The LLM is instructed to ground every claim in the extracted text
-- If the source doesn't support a claim, the model writes `"unclear"` — not a guess
-- Segments (structured sections from `segment.py`) are passed rather than raw full text, to stay within context limits
-- One LLM call per bill — no parallel calls in MVP
+- Every claim is grounded in the extracted text — if the source doesn't support it, write `"unclear"`
+- Suspect PDFs (`.suspect.md` marker) are never sent to the LLM
+- One LLM call per bill; no parallel calls in MVP
+- `--max N` caps how many bills are analyzed per run
 
-## CLI
+## Planned CLI
 
 ```bash
-PYTHONPATH=src python -m lib.pipeline.analyze --source parliament_my --max 10
-PYTHONPATH=src python -m lib.pipeline.analyze --source parliament_my --force --max 5
+PYTHONPATH=src python -m lib.pipeline.analyze --max 10
+PYTHONPATH=src python -m lib.pipeline.analyze --force --max 5  # re-analyze existing
 ```
-
-## Cost management
-
-- `--max N` caps LLM calls per run
-- Token counts are logged if the client exposes them
-- Skipped bills (already have `analysis.json`) do not count against `--max`
-- Suspect PDFs (marked with `suspect.txt`) are never sent to the LLM
-
-## LLM provider
-
-Configured in `.env` (see `.env.example`). The client wrapper lives at `src/lib/llm/client.py`.

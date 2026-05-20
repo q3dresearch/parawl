@@ -1,38 +1,51 @@
+---
+title: Extract
+description: Pipeline stage — convert downloaded PDFs to Markdown using pymupdf4llm.
+tags: [pipeline, extract, pdf, markdown]
+status: implemented
+---
+
 # Pipeline — Extract
 
-**Module:** `src/lib/pipeline/extract.py`  
-**Input:** `data/raw/<adapter>/pdf/<year>/<bill_id>.pdf`  
-**Output:** `data/derived/<adapter>/extracted/<year>/<bill_id>/text.md`
+!!! success "Implemented"
+    `lib.pipeline.extract` is working. Run it after downloading PDFs.
+
+**Module:** `src/lib/pipeline/extract.py`
+**Input:** `data/raw/<adapter>/pdf/<year>/<bill_id>.pdf`
+**Output:** `data/derived/<adapter>/extracted/<year>/<bill_id>.md`
 
 ## What it does
 
-Extracts structured Markdown from downloaded bill PDFs. No LLM is used at this stage — extraction is deterministic.
+Converts downloaded bill PDFs to Markdown. No LLM involved — extraction is deterministic and fast.
 
 ## Library selection
 
-| Library | Speed | Quality | Role |
-|---------|-------|---------|------|
-| `pymupdf4llm` | 0.1s | 96% | **Primary** — outputs Markdown with headings and clause structure intact |
-| `pypdf` | 3.5s | 96% | **Fallback** — pure Python, no C dependencies, works in restricted environments |
+| Library | Speed | Output | Role |
+|---------|-------|--------|------|
+| `pymupdf4llm` | ~0.1s/page | Markdown | **Primary** — preserves headings and clause structure |
+| `pypdf` | ~3.5s/page | Plain text | **Fallback** — pure Python, no C dependency |
 
-`pymupdf4llm` is the clear choice: same quality as competitors, fastest speed, and Markdown output means the LLM receives structured text (section headings, numbered clauses, sub-clauses indented) rather than a flat string.
+`pymupdf4llm` is the clear choice: same quality, fastest speed, and Markdown output means downstream LLM stages receive structured text (headings, numbered clauses, indented sub-clauses) rather than a flat string.
 
-If the primary extractor yields < 100 characters, the bill is likely a scanned image PDF. A `suspect.md` marker is written and the LLM stage skips this bill.
+## Suspect PDFs
 
-## Malaysian bill layout notes
+If extraction yields fewer than 100 characters, the bill is likely a scanned image PDF with no selectable text. A `suspect.md` marker is written alongside the output and the analyze stage will skip it.
 
-Bills are typically bilingual (Bahasa Malaysia + English). The English text usually appears in the right column or second half of the document. Both languages are preserved in the extracted text — the LLM is instructed to prefer the English sections for analysis but may reference BM for confirmation.
+## Malaysian bill layout
+
+Bills are typically bilingual (Bahasa Malaysia + English). Both languages are preserved in the extracted Markdown — the English text usually appears in the right column or second half of the document.
 
 ## CLI
 
 ```bash
-PYTHONPATH=src python -m lib.pipeline.extract --source parliament_my
-PYTHONPATH=src python -m lib.pipeline.extract --source parliament_my --force  # re-extract all
+PYTHONPATH=src python -m lib.pipeline.extract
+PYTHONPATH=src python -m lib.pipeline.extract --force   # re-extract existing
 ```
 
 ## Output files
 
-| File | Meaning |
-|------|---------|
-| `text.txt` | Extracted plain text |
-| `suspect.txt` | Present only if extraction yield was suspiciously low |
+```
+data/derived/my/parliament_my/extracted/2024/
+  DR-21-2024.md          # extracted Markdown
+  DR-21-2024.suspect.md  # present only if extraction yield < 100 chars
+```
