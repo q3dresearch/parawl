@@ -1,0 +1,9 @@
+# Poll targets → init_db → source_library → cron (one URL per line).
+# Optional: URL<TAB>label. Lines starting with # ignored.
+#
+# Precision vs recall: see mds/agents/sitesCrawl.md
+
+https://www.parlimen.gov.my/bills-dewan-rakyat.html	Parliament MY — Dewan Rakyat (default; optional if uweb=dr is enough)
+https://www.parlimen.gov.my/bills-dewan-rakyat.html?uweb=dr	Parliament MY — Dewan Rakyat (uweb=dr)
+https://www.parlimen.gov.my/bills-dewan-rakyat.html?uweb=dr&arkib=yes	Parliament MY — Dewan Rakyat archive (arkib)
+https://www.parlimen.gov.my/bills-dewan-negara.html	Parliament MY — Dewan Negara
