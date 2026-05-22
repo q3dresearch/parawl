@@ -22,9 +22,14 @@ from lib.sources.my.parliament_my.dhtmlx_arkib import (
     dedupe_bill_records,
     drop_bm_billindex_urls,
     list_bill_records_arkib_dhtmlx_sweep,
+    list_hansard_records_arkib_dhtmlx_sweep,
     list_pdfs_arkib_dhtmlx_sweep,
+    parliaments_for_year,
     resolve_arkib_bill_pdf_urls,
     write_arkib_bills_csv_by_year,
+    write_hansard_csv,
+    write_hansard_csv_by_year,
+    _is_hansard_arkib_url,
 )
 from lib.sources.my.parliament_my.pdf_discovery import (
     list_pdfs_from_seed_file,
@@ -144,10 +149,102 @@ def main() -> None:
         metavar="N",
         help="Cap BFS node fetches for DR archive dhtmlx sweep (default 2000).",
     )
+    parser.add_argument(
+        "--list-hansard",
+        action="store_true",
+        help="Hansard arkib: BFS dhtmlx sweep → one record per sitting date (JSON stdout).",
+    )
+    parser.add_argument(
+        "--hansard-csv",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="With --list-hansard: write all records to this CSV path.",
+    )
+    parser.add_argument(
+        "--hansard-max-nodes",
+        type=int,
+        default=8000,
+        metavar="N",
+        help="Cap BFS node fetches for Hansard archive sweep (default 8000).",
+    )
+    parser.add_argument(
+        "--hansard-year",
+        type=str,
+        default=None,
+        metavar="YYYY",
+        help=(
+            "With --list-hansard: filter output to sittings in this year only. "
+            "Also scopes the BFS to parliaments active in that year (fast path — no full history sweep)."
+        ),
+    )
+    parser.add_argument(
+        "--hansard-parliament",
+        type=int,
+        action="append",
+        dest="hansard_parliaments",
+        metavar="N",
+        help=(
+            "With --list-hansard: only sweep Parliament N (repeatable). "
+            "Overrides the automatic year→parliament mapping from --hansard-year. "
+            "E.g. --hansard-parliament 15 for 2022-present sittings only."
+        ),
+    )
+    parser.add_argument(
+        "--hansard-csv-dir",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="With --list-hansard: write one hansard_{house}_{year}.csv per house+year.",
+    )
     args = parser.parse_args()
 
     if args.insecure:
         warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+
+    if args.list_hansard:
+        verify = not args.insecure
+        seed_path = Path(__file__).resolve().parent / "seed_urls.txt"
+        urls = args.list_urls if args.list_urls else [u for u, _ in parse_seed_urls_file(seed_path)]
+        hansard_urls = [u for u in urls if _is_hansard_arkib_url(u)]
+        if not hansard_urls:
+            parser.error("--list-hansard: no Hansard arkib URLs found (pass --url or check seed_urls.txt)")
+
+        parl_filter: list[int] | None = None
+        if args.hansard_parliaments:
+            parl_filter = args.hansard_parliaments
+        elif args.hansard_year:
+            try:
+                parl_filter = parliaments_for_year(int(args.hansard_year))
+            except ValueError:
+                parser.error(f"--hansard-year: expected integer year, got {args.hansard_year!r}")
+            if not parl_filter:
+                parser.error(f"--hansard-year {args.hansard_year}: no known parliament maps to this year")
+
+        all_records: list[dict[str, str]] = []
+        for u in hansard_urls:
+            chunk = list_hansard_records_arkib_dhtmlx_sweep(
+                u,
+                verify_tls=verify,
+                max_nodes=args.hansard_max_nodes,
+                parliament_filter=parl_filter,
+                verbose=args.verbose,
+                log=sys.stderr,
+            )
+            all_records.extend(chunk)
+        if args.hansard_year:
+            all_records = [r for r in all_records if (r.get("sitting_date") or "").startswith(args.hansard_year)]
+        if args.hansard_csv:
+            p = write_hansard_csv(all_records, args.hansard_csv)
+            if args.verbose:
+                print(f"[list-hansard] wrote {p}", file=sys.stderr)
+        if args.hansard_csv_dir:
+            paths = write_hansard_csv_by_year(all_records, args.hansard_csv_dir)
+            if args.verbose:
+                for p in paths:
+                    print(f"[list-hansard] wrote {p}", file=sys.stderr)
+        print(json.dumps(all_records, ensure_ascii=False, indent=2))
+        return
 
     if args.list_pdfs and args.list_arkib_bills:
         parser.error("use either --list-pdfs or --list-arkib-bills, not both")

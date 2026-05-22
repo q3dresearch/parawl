@@ -75,6 +75,24 @@ The dhtmlx archive tree can yield the same bill from multiple nodes (root node, 
 
 ---
 
+## `test_dhtmlx_hansard.py` — Hansard XML parser and date parsing
+
+Tests for the Hansard crawl path: dhtmlx tree parsing, Malay date parsing, and CSV output.
+
+| Test | What it checks |
+|------|---------------|
+| `test_parse_bm_date_text_standard` | `"19 Julai 1982"` → `"1982-07-19"` |
+| `test_parse_bm_date_text_case_insensitive` | Month names are matched case-insensitively |
+| `test_parse_date_from_hindex_filename_dr` | `"DR-19072024.pdf"` → `"2024-07-19"` |
+| `test_parse_date_from_hindex_filename_dn` | `"DN-01012023.pdf"` → `"2023-01-01"` |
+| `test_parse_hansard_records_from_xml_basic` | Leaf nodes from a synthetic Hansard XML yield correct `sitting_date`, `house`, `pdf_url` |
+| `test_parse_dhtmlx_xml_handles_duplicate_trees` | Repeated `<tree>` elements (malformed Hansard response) are parsed without error |
+| `test_parliaments_for_year_2024` | `parliaments_for_year(2024)` returns `[15]` |
+| `test_parliaments_for_year_1982` | `parliaments_for_year(1982)` returns the correct parliament(s) covering 1982 |
+| `test_write_hansard_csv_by_year_splits_files` | Records are split into per-house per-year CSV files with the correct filenames |
+
+---
+
 ## `test_discovery.py` — source adapter discovery
 
 Tests for `lib.sources.discovery` — the module that reads `seed_urls.txt` files across all adapters.
@@ -83,8 +101,8 @@ Tests for `lib.sources.discovery` — the module that reads `seed_urls.txt` file
 |------|---------------|
 | `test_sources_root_exists` | `src/lib/sources/my/parliament_my/seed_urls.txt` is present on disk |
 | `test_iter_adapter_dirs_includes_parliament` | `parliament_my` appears in the list of discovered adapters |
-| `test_parliament_seed_urls_order` | The 4 seed URLs are in the expected order: default index, `?uweb=dr`, archive, Dewan Negara |
-| `test_iter_source_library_seeds_parliament` | `parliament_my` contributes exactly 4 seed rows to the source library |
+| `test_parliament_seed_urls_order` | The 8 seed URLs are in the expected order: bills (EN/BM/archive) then hansard (DR/DN live+archive) |
+| `test_iter_source_library_seeds_parliament` | `parliament_my` contributes exactly 8 seed rows to the source library |
 
 ---
 
@@ -92,5 +110,6 @@ Tests for `lib.sources.discovery` — the module that reads `seed_urls.txt` file
 
 ```bash
 pytest tests/test_dhtmlx_dedupe.py -v
+pytest tests/test_dhtmlx_hansard.py -v
 pytest tests/test_parliament_pdf_parse.py -v -k "bm"   # filter by name
 ```

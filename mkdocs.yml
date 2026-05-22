@@ -11,12 +11,11 @@ nav:
     - sources/index.md
     - Crawl Strategy: sources/taxonomy.md
     - Malaysia:
-      - Parliament (Dewan Rakyat): sources/my/parliament.md
+      - Parliament (Bills + Hansard): sources/my/parliament.md
   - Pipeline:
     - pipeline/index.md
     - Download: pipeline/download.md
     - Extract: pipeline/extract.md
-    - Analyze: pipeline/analyze.md
   - Tests: tests/index.md
   - Changelog: changelog/index.md
   - Reference:

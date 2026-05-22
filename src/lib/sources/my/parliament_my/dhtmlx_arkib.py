@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
@@ -170,10 +171,27 @@ def _ajax_url(arkib_page_url: str, node_id: str) -> str:
     return f"{base}{joiner}ajx=1&uid={uid}&id={node_id}"
 
 
-def _expandable_child_ids(xml_text: str) -> list[str]:
+def _parse_dhtmlx_xml(xml_text: str) -> ET.Element | None:
+    """
+    Parse a dhtmlx XML response that may contain multiple concatenated ``<tree>`` elements.
+
+    The Hansard endpoint sometimes returns the same ``<tree>`` block repeated; wrapping in a
+    synthetic root lets ET iterate all items across all trees without raising ParseError.
+    """
+    stripped = re.sub(r"<\?xml[^>]*\?>", "", xml_text).strip()
     try:
-        root = ET.fromstring(xml_text.strip())
+        return ET.fromstring(stripped)
     except ET.ParseError:
+        pass
+    try:
+        return ET.fromstring(f"<root>{stripped}</root>")
+    except ET.ParseError:
+        return None
+
+
+def _expandable_child_ids(xml_text: str) -> list[str]:
+    root = _parse_dhtmlx_xml(xml_text)
+    if root is None:
         return []
     out: list[str] = []
     seen: set[str] = set()
@@ -541,6 +559,196 @@ def write_arkib_bills_csv_by_year(
         path = out_dir / filename_template.format(year=year)
         with path.open("w", encoding="utf-8-sig", newline="") as f:
             w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+        written.append(path)
+    return written
+
+
+# ---------------------------------------------------------------------------
+# Hansard sweep — BM only, leaf nodes carry /files/hindex/pdf/ paths
+# ---------------------------------------------------------------------------
+
+# Known MY parliament → (first_year, last_year inclusive).
+# Used to prune BFS seeds when --hansard-year is given; overlap at boundaries is intentional
+# (elections mid-year mean two parliaments may have sittings in the same year).
+# Update last_year of the current parliament as elections happen.
+_MALAYSIA_PARLIAMENT_YEARS: dict[int, tuple[int, int]] = {
+    1: (1959, 1964),
+    2: (1964, 1969),
+    3: (1971, 1974),
+    4: (1975, 1978),
+    5: (1978, 1982),
+    6: (1982, 1986),
+    7: (1986, 1990),
+    8: (1990, 1995),
+    9: (1995, 1999),
+    10: (1999, 2004),
+    11: (2004, 2008),
+    12: (2008, 2013),
+    13: (2013, 2018),
+    14: (2018, 2022),
+    15: (2022, 2030),  # update when Parliament 16 is sworn in
+}
+
+# Safe upper bound for parliament seeding; raise when Parliament 20+ is sworn in.
+_HANSARD_MAX_PARLIAMENT_SEED = 20
+
+
+def parliaments_for_year(year: int) -> list[int]:
+    """
+    Return parliament numbers whose term overlaps ``year``.
+
+    Errs on the side of over-inclusion at boundary years (an election may dissolve
+    one parliament and seat the next within the same calendar year).
+    """
+    return [p for p, (y0, y1) in _MALAYSIA_PARLIAMENT_YEARS.items() if y0 <= year <= y1]
+
+
+def _is_hansard_arkib_url(url: str) -> bool:
+    u = url.lower()
+    return "arkib" in u and "hansard" in u
+
+
+def _hansard_page_url_bm(page_url: str) -> str:
+    """Ensure lang=bm on the hansard arkib page URL."""
+    frag = (page_url or "").strip().split("#")[0]
+    p = urlparse(frag)
+    pairs = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=False) if k.lower() != "lang"]
+    pairs.append(("lang", "bm"))
+    pairs.sort(key=lambda kv: (kv[0].lower(), kv[1]))
+    q = urlencode(pairs, doseq=True)
+    scheme = (p.scheme or "https").lower()
+    return f"{scheme}://{p.netloc}{p.path}" + (f"?{q}" if q else "")
+
+
+def list_hansard_records_arkib_dhtmlx_sweep(
+    arkib_page_url: str,
+    *,
+    verify_tls: bool = True,
+    max_nodes: int = 8000,
+    parliament_filter: list[int] | None = None,
+    verbose: bool = False,
+    log: TextIO | None = None,
+) -> list[dict[str, str]]:
+    """
+    BFS over the Hansard dhtmlx tree (4 levels: parliament → penggal → mesyuarat → sittings).
+
+    Leaf nodes (``child='0'``) carry ``loadResult('/files/hindex/pdf/DN-DDMMYYYY.pdf')``.
+    Returns one record per sitting date. No PDF probing needed — filename is canonical.
+
+    Node ID scheme: ``0_{parliament}_{penggal}_{mesyuarat_id}`` (e.g. ``0_15_2_11``).
+    ``id=0`` only returns historical parliaments (1–6); parliaments 7–15 must be seeded
+    explicitly as ``0_7``, ``0_8``, … — the server returns 500 for non-existent IDs,
+    which the BFS silently skips.
+
+    ``parliament_filter``: if given, only seed nodes for those parliament numbers (e.g.
+    ``[15]`` for 2024 data). Use :func:`parliaments_for_year` to compute from a year.
+    Omit for a full sweep of all parliaments.
+    """
+    records: list[dict[str, str]] = []
+    mesyuarat_labels: dict[str, str] = {}
+
+    if parliament_filter:
+        parls = sorted(set(parliament_filter))
+        initial_seeds = [f"0_{p}" for p in parls]
+        if verbose and log:
+            print(f"[hansard] parliament filter: {parls} → seeding {initial_seeds}", file=log)
+    else:
+        initial_seeds = ["0"] + [f"0_{i}" for i in range(1, _HANSARD_MAX_PARLIAMENT_SEED + 1)]
+
+    queue: deque[str] = deque(initial_seeds)
+    fetched: set[str] = set()
+    page_bm = _hansard_page_url_bm(arkib_page_url)
+
+    sess = requests.Session()
+    sess.headers.update(config.DEFAULT_HEADERS)
+    try:
+        sess.get(page_bm, verify=verify_tls, timeout=config.FETCH_TIMEOUT_S)
+    except requests.RequestException:
+        pass
+
+    while queue and len(fetched) < max_nodes:
+        nid = queue.popleft()
+        if nid in fetched:
+            continue
+        fetched.add(nid)
+
+        uid = int(time.time() * 1000)
+        url = f"{page_bm}&ajx=1&uid={uid}&id={nid}"
+        fr = fetch.fetch_url(url, verify=verify_tls, headers={"Referer": page_bm}, session=sess)
+        if not fr.raw_bytes or fr.status != "ok" or fr.http_status != 200:
+            if verbose and log:
+                print(f"[hansard] node {nid!r}: {fr.status} {fr.error}", file=log)
+            continue
+
+        xml_text = fr.raw_bytes.decode("utf-8", errors="replace")
+
+        # Collect mesyuarat labels: items with child="1" at depth 3 (0_P_G_M)
+        parsed_root = _parse_dhtmlx_xml(xml_text)
+        if parsed_root is not None:
+            for item in parsed_root.iter("item"):
+                iid = item.get("id") or ""
+                itext = (item.get("text") or "").strip()
+                if item.get("child") == "1" and iid.count("_") == 3:
+                    mesyuarat_labels[iid] = itext
+
+        depth = nid.count("_")
+        mtext = mesyuarat_labels.get(nid, "")
+        rows = parse.parse_hansard_records_from_xml(
+            xml_text,
+            source_tree_node_id=nid,
+            mesyuarat_text=mtext,
+            seed_url=page_bm,
+        )
+        records.extend(rows)
+
+        if verbose and log:
+            print(f"[hansard] node {nid!r} depth={depth}: +{len(rows)} sitting(s), queue ~{len(queue)}", file=log)
+
+        for cid in _expandable_child_ids(xml_text):
+            if cid not in fetched:
+                queue.append(cid)
+
+    if log:
+        print(f"[hansard] sweep done: {len(fetched)} node(s), {len(records)} sitting(s)", file=log)
+        if queue and len(fetched) >= max_nodes:
+            print(f"[hansard] warning: stopped at max_nodes ({max_nodes}); ~{len(queue)} still queued", file=log)
+
+    return records
+
+
+def write_hansard_csv(records: list[dict[str, str]], out_path: Path) -> Path:
+    """Write all Hansard records to a single UTF-8 CSV."""
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=parse.HANSARD_CSV_FIELDS, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(records)
+    return out_path
+
+
+def write_hansard_csv_by_year(
+    records: list[dict[str, str]],
+    out_dir: Path,
+    *,
+    filename_template: str = "hansard_{house}_{year}.csv",
+) -> list[Path]:
+    """Write one UTF-8 CSV per distinct house+year (e.g. hansard_DN_2024.csv)."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    by_key: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    for row in records:
+        year = (row.get("sitting_date") or "")[:4] or "unknown"
+        house = (row.get("house") or "unknown").upper()
+        by_key[(house, year)].append(row)
+
+    written: list[Path] = []
+    for (house, year), rows in sorted(by_key.items()):
+        path = out_dir / filename_template.format(house=house, year=year)
+        with path.open("w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=parse.HANSARD_CSV_FIELDS, extrasaction="ignore")
             w.writeheader()
             w.writerows(rows)
         written.append(path)

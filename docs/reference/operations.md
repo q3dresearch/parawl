@@ -31,7 +31,30 @@ All commands assume the virtualenv is active and you are in the repo root.
 
 ---
 
-## Crawl — Malaysia Parliament
+## Output directories (all gitignored)
+
+```
+parawl/
+├── src/out/                        ← crawl index CSVs
+│   ├── bills_csv/bills_2024.csv    bill metadata + pdf_url per year
+│   └── hansard_csv/
+│       └── hansard_DR_2024.csv     sitting metadata + pdf_url per house+year
+│
+└── data/                           ← downloaded and derived artifacts
+    ├── raw/parliament_my/pdf/
+    │   └── 2024/
+    │       ├── DR-6-2024.pdf
+    │       └── DR-6-2024.meta.json    sha256, url, downloaded_at
+    └── derived/parliament_my/extracted/
+        └── 2024/
+            └── DR-6-2024.md           extracted Markdown text
+```
+
+None of these directories are committed to git — they are runtime outputs produced by the crawl and pipeline stages.
+
+---
+
+## Crawl — Bills (Rang Undang-Undang)
 
 ```bash
 # Crawl bill index → per-year CSVs under src/out/bills_csv/
@@ -39,7 +62,7 @@ python -m lib.sources.my.parliament_my.crawl \
   --list-arkib-bills \
   --arkib-csv-dir src/out/bills_csv
 
-# Also resolve PDF URLs (parallel probes)
+# Also resolve PDF URLs (parallel probes — confirms each link is reachable)
 python -m lib.sources.my.parliament_my.crawl \
   --list-arkib-bills \
   --arkib-csv-dir src/out/bills_csv \
@@ -51,6 +74,45 @@ python -m lib.sources.my.parliament_my.crawl --list-arkib-bills --insecure
 # Print bill JSON to stdout without writing CSVs
 python -m lib.sources.my.parliament_my.crawl --list-arkib-bills
 ```
+
+---
+
+## Crawl — Hansard (Penyata Rasmi)
+
+```bash
+# Fast path: Parliament 15 only (2022–present), one CSV per house+year
+python -m lib.sources.my.parliament_my.crawl \
+  --list-hansard \
+  --hansard-parliament 15 \
+  --hansard-csv-dir src/out/hansard_csv
+
+# Filter to a single year (also scopes BFS to relevant parliament)
+python -m lib.sources.my.parliament_my.crawl \
+  --list-hansard \
+  --hansard-year 2024 \
+  --hansard-csv-dir src/out/hansard_csv
+
+# Full archive sweep — all parliaments 1–15 (slow, ~8000 nodes)
+python -m lib.sources.my.parliament_my.crawl \
+  --list-hansard \
+  --hansard-csv-dir src/out/hansard_csv
+
+# TLS bypass (dev)
+python -m lib.sources.my.parliament_my.crawl --list-hansard --insecure
+```
+
+---
+
+## Download + Extract sample
+
+A single script crawls, downloads, and extracts a small batch of PDFs into the gitignored `data/` directory:
+
+```bash
+python scripts/sample_crawl.py --insecure
+```
+
+PDFs land in `data/raw/parliament_my/pdf/<year>/`.  
+Extracted Markdown lands in `data/derived/parliament_my/extracted/<year>/`.
 
 ---
 

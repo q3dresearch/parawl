@@ -744,6 +744,130 @@ def parse_bill_listing_table_rows(html: str, page_url: str) -> list[dict[str, ob
     return rows_out
 
 
+# ---------------------------------------------------------------------------
+# Hansard (Penyata Rasmi) — /files/hindex/pdf/{house}-{DDMMYYYY}.pdf
+# ---------------------------------------------------------------------------
+
+_HANSARD_LOAD_RESULT = re.compile(
+    r"loadResult\s*\(\s*['\"](/files/hindex/pdf/[^'\"]+)['\"]",
+    re.IGNORECASE,
+)
+
+_BM_MONTHS: dict[str, str] = {
+    "januari": "01", "februari": "02", "mac": "03", "april": "04",
+    "mei": "05", "jun": "06", "julai": "07", "ogos": "08",
+    "september": "09", "oktober": "10", "november": "11", "disember": "12",
+}
+
+_HINDEX_FILENAME = re.compile(r"(DR|DN)-(\d{2})(\d{2})(\d{4})\.pdf$", re.IGNORECASE)
+
+
+def parse_bm_date_text(text: str) -> str:
+    """'19 Julai 1982' → '1982-07-19'. Returns '' on failure."""
+    parts = text.strip().split()
+    if len(parts) != 3:
+        return ""
+    day, month_bm, year = parts
+    month = _BM_MONTHS.get(month_bm.lower(), "")
+    if not month or not day.isdigit() or not year.isdigit():
+        return ""
+    return f"{year}-{month}-{day.zfill(2)}"
+
+
+def parse_date_from_hindex_filename(filename: str) -> str:
+    """'DN-19071982.pdf' → '1982-07-19'. Returns '' on failure."""
+    m = _HINDEX_FILENAME.search(filename)
+    if not m:
+        return ""
+    _, dd, mm, yyyy = m.group(1), m.group(2), m.group(3), m.group(4)
+    return f"{yyyy}-{mm}-{dd}"
+
+
+def _node_id_parts(node_id: str) -> tuple[str, str, str]:
+    """'0_6_1_1_0' → (parliament='6', penggal='1', mesyuarat='1')."""
+    parts = node_id.split("_")
+    parliament = parts[1] if len(parts) > 1 else ""
+    penggal = parts[2] if len(parts) > 2 else ""
+    mesyuarat = parts[3] if len(parts) > 3 else ""
+    return parliament, penggal, mesyuarat
+
+
+HANSARD_CSV_FIELDS: tuple[str, ...] = (
+    "house",
+    "sitting_date",
+    "sitting_date_text",
+    "parliament_no",
+    "penggal_no",
+    "mesyuarat_no",
+    "mesyuarat_text",
+    "pdf_filename",
+    "pdf_url",
+    "source_tree_node_id",
+    "seed_url",
+)
+
+
+def parse_hansard_records_from_xml(
+    xml_text: str,
+    *,
+    source_tree_node_id: str = "",
+    mesyuarat_text: str = "",
+    seed_url: str = "",
+    base_url: str | None = None,
+) -> list[dict[str, str]]:
+    """
+    Extract leaf sitting records from a Hansard dhtmlx tree XML response.
+
+    Leaf nodes have ``child='0'`` and carry ``loadResult('/files/hindex/pdf/...')``.
+    Returns one dict per sitting date.
+    """
+    base = base_url or config.BASE_URL
+    stripped = re.sub(r"<\?xml[^>]*\?>", "", xml_text).strip()
+    try:
+        root = ET.fromstring(stripped)
+    except ET.ParseError:
+        try:
+            root = ET.fromstring(f"<root>{stripped}</root>")
+        except ET.ParseError:
+            return []
+
+    parliament, penggal, mesyuarat = _node_id_parts(source_tree_node_id)
+    rows: list[dict[str, str]] = []
+
+    for item in root.findall("./item"):
+        if item.get("child") != "0":
+            continue
+        text = (item.get("text") or "").strip()
+        myurl = _dhtmlx_userdata_myurl(item)
+        m = _HANSARD_LOAD_RESULT.search(myurl or "")
+        if not m:
+            continue
+        rel_path = m.group(1).strip()
+        filename = rel_path.rsplit("/", 1)[-1]
+        pdf_url = urljoin(base.rstrip("/") + "/", rel_path.lstrip("/"))
+
+        house_match = re.match(r"(DR|DN)", filename, re.IGNORECASE)
+        house = (house_match.group(1).upper() if house_match else "")
+
+        sitting_date = parse_bm_date_text(text) or parse_date_from_hindex_filename(filename)
+
+        rows.append({
+            "house": house,
+            "sitting_date": sitting_date,
+            "sitting_date_text": text,
+            "parliament_no": parliament,
+            "penggal_no": penggal,
+            "mesyuarat_no": mesyuarat,
+            "mesyuarat_text": mesyuarat_text,
+            "pdf_filename": filename,
+            "pdf_url": pdf_url,
+            "source_tree_node_id": source_tree_node_id,
+            "seed_url": seed_url,
+        })
+
+    return rows
+
+
 def extract_index_links(html: str, base_url: str | None = None) -> list[ParsedLink]:
     """
     From a bill *index* page, return a de-duplicated list of candidate bill/document URLs.

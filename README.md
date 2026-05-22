@@ -17,7 +17,8 @@ pipe it to SQLite, a vector store, a search index, or a folder on your machine.
 
 | Adapter | Source | Coverage |
 |---|---|---|
-| `my.parliament_my` | parlimen.gov.my — Dewan Rakyat bills | 1990–present |
+| `my.parliament_my` | parlimen.gov.my — Bills (Dewan Rakyat) | 1990–present |
+| `my.parliament_my` | parlimen.gov.my — Hansard / Penyata Rasmi | 1959–present |
 
 ## Pipeline stages
 
@@ -41,38 +42,50 @@ git clone https://github.com/q3dresearch/parawl
 cd parawl
 ```
 
-**Windows**
+**Windows (PowerShell)**
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+$env:PYTHONPATH = "src"
 ```
 
 **macOS / Linux**
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+export PYTHONPATH=src
 ```
+
+> **Note:** Use `python -m pip` rather than bare `pip` to ensure packages install into the active venv,
+> not a system or Conda environment that may be on your PATH.
 
 Then crawl and extract:
 
-```bash
+```powershell
 # crawl bill index for Malaysia
-python -m lib.sources.my.parliament_my.crawl
+python -m lib.sources.my.parliament_my.crawl --list-arkib-bills --arkib-csv-dir src/out/bills_csv
 
-# extract text from downloaded PDFs
-python -m lib.pipeline.extract
+# crawl Hansard — Parliament 15 (2022–present)
+python -m lib.sources.my.parliament_my.crawl --list-hansard --hansard-parliament 15 --hansard-csv-dir src/out/hansard_csv
+
+# download + extract a sample batch of 3 hansard + 3 bill PDFs
+python scripts/sample_crawl.py
+
+# TLS bypass if your machine has certificate issues
+python scripts/sample_crawl.py --insecure
 ```
 
 ## Browse the docs locally
 
-```bash
-pip install mkdocs-material
-mkdocs serve
+```powershell
+python -m mkdocs serve
 ```
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
+
+> Use `python -m mkdocs` rather than bare `mkdocs` for the same reason as `python -m pip` above.
 
 The hosted docs are at **https://q3dresearch.github.io/parawl/**
 

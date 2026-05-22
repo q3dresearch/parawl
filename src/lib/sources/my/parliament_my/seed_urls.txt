@@ -3,7 +3,14 @@
 #
 # Precision vs recall: see mds/agents/sitesCrawl.md
 
-https://www.parlimen.gov.my/bills-dewan-rakyat.html	Parliament MY — Dewan Rakyat (default; optional if uweb=dr is enough)
-https://www.parlimen.gov.my/bills-dewan-rakyat.html?uweb=dr	Parliament MY — Dewan Rakyat (uweb=dr)
-https://www.parlimen.gov.my/bills-dewan-rakyat.html?uweb=dr&arkib=yes	Parliament MY — Dewan Rakyat archive (arkib)
-https://www.parlimen.gov.my/bills-dewan-negara.html	Parliament MY — Dewan Negara
+# --- Bills ---
+https://www.parlimen.gov.my/bills-dewan-rakyat.html	Parliament MY — Dewan Rakyat bills (default)
+https://www.parlimen.gov.my/bills-dewan-rakyat.html?uweb=dr	Parliament MY — Dewan Rakyat bills (uweb=dr)
+https://www.parlimen.gov.my/bills-dewan-rakyat.html?uweb=dr&arkib=yes	Parliament MY — Dewan Rakyat bills archive (arkib)
+https://www.parlimen.gov.my/bills-dewan-negara.html	Parliament MY — Dewan Negara bills
+
+# --- Hansard (Penyata Rasmi) — BM only, no EN version ---
+https://www.parlimen.gov.my/hansard-dewan-rakyat.html?uweb=dr&lang=bm	Parliament MY — Dewan Rakyat Hansard current
+https://www.parlimen.gov.my/hansard-dewan-rakyat.html?uweb=dr&lang=bm&arkib=yes	Parliament MY — Dewan Rakyat Hansard archive (arkib)
+https://www.parlimen.gov.my/hansard-dewan-negara.html?uweb=dn&lang=bm	Parliament MY — Dewan Negara Hansard current
+https://www.parlimen.gov.my/hansard-dewan-negara.html?uweb=dn&lang=bm&arkib=yes	Parliament MY — Dewan Negara Hansard archive (arkib)

@@ -37,7 +37,7 @@ parawl/
 │   ├── sources/            one adapter per legal source
 │   │   ├── discovery.py    seed_urls.txt → source list
 │   │   └── my/
-│   │       └── parliament_my/   parlimen.gov.my bills (1990–present)
+│   │       └── parliament_my/   parlimen.gov.my bills + hansard (1990/1959–present)
 │   │           ├── crawl.py
 │   │           ├── fetch.py
 │   │           ├── parse.py
@@ -106,7 +106,12 @@ Then run a crawl:
 
 ```bash
 # Crawl bill index — produces src/out/bills_csv/bills_<year>.csv
-PYTHONPATH=src python -m lib.sources.my.parliament_my.crawl --list-arkib-bills --arkib-csv-dir src/out/bills_csv
+PYTHONPATH=src python -m lib.sources.my.parliament_my.crawl \
+  --list-arkib-bills --arkib-csv-dir src/out/bills_csv
+
+# Crawl Hansard — Parliament 15 (2022–present), one CSV per house+year
+PYTHONPATH=src python -m lib.sources.my.parliament_my.crawl \
+  --list-hansard --hansard-parliament 15 --hansard-csv-dir src/out/hansard_csv
 
 # Extract text from downloaded PDFs
 PYTHONPATH=src python -m lib.pipeline.extract

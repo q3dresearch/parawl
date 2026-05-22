@@ -6,6 +6,7 @@ data/raw/
 data/derived/
 data/snapshots/
 !data/.gitkeep
+src/out/
 stateconscious.db
 .pytest_cache/
 site/
