@@ -6,6 +6,7 @@ docs_dir: docs
 
 nav:
   - Home: index.md
+  - Working with an Agent: agents/index.md
   - Architecture: architecture/index.md
   - Sources:
     - sources/index.md
